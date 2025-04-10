@@ -8,6 +8,7 @@ import {
 } from '@renderer/components/ui/table'
 import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query'
 import { flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { columnDefinitions } from './column-definitions'
 import { fetchData, UserApiResponse } from './fake-data'
@@ -50,8 +51,9 @@ export default function DataTable() {
     [fetchNextPage, isFetching, totalFetched, totalDBRowCount]
   )
 
-  fetchMoreOnBottomReached(tableContainerRef.current)
-  useEffect(() => {}, [fetchMoreOnBottomReached])
+  useEffect(() => {
+    fetchMoreOnBottomReached(tableContainerRef.current)
+  }, [fetchMoreOnBottomReached])
 
   const table = useReactTable({
     data: rowData,
@@ -60,6 +62,20 @@ export default function DataTable() {
   })
 
   const { rows } = table.getRowModel()
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    estimateSize: () => 33,
+    getScrollElement: () => tableContainerRef.current,
+    measureElement:
+      typeof window !== 'undefined' && navigator.userAgent.indexOf('Firefox') === -1
+        ? (element) => element?.getBoundingClientRect().height
+        : undefined,
+    overscan: 10
+  })
+
+  if (isLoading) {
+    return <>Loading...</>
+  }
 
   return (
     <div className="m-1 -mt-6 bg-background flex flex-col items-center text-sm rounded-md gap-4">
@@ -95,14 +111,23 @@ export default function DataTable() {
             ))}
           </TableHeader>
           <TableBody
-            className="relative "
+            className="relative" 
             style={{
-              height: `${table.getTotalSize()}px` //tells scrollbar how big the table is
+              height: `${rowVirtualizer.getTotalSize()}px` //tells scrollbar how big the table is
             }}
           >
-            {table.getRowModel().rows.map((row) => {
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const row = rows[virtualRow.index]
               return (
-                <TableRow key={row.id} className="flex w-full">
+                <TableRow
+                  data-index={virtualRow.index}
+                  ref={(node) => rowVirtualizer.measureElement(node)}
+                  key={row.id}
+                  className="flex absolute w-full"
+                  style={{
+                    transform: `translateY(${virtualRow.start}px)` 
+                  }}
+                >
                   {row.getVisibleCells().map((cell) => {
                     return (
                       <TableCell
