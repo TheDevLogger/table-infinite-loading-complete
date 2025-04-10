@@ -6,13 +6,52 @@ import {
   TableHeader,
   TableRow
 } from '@renderer/components/ui/table'
+import { keepPreviousData, useInfiniteQuery } from '@tanstack/react-query'
 import { flexRender, getCoreRowModel, useReactTable } from '@tanstack/react-table'
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { columnDefinitions } from './column-definitions'
-import { makeData, User } from './fake-data'
+import { fetchData, UserApiResponse } from './fake-data'
+
+const fetchSize = 50
 
 export default function DataTable() {
-  const [rowData] = useState<User[]>(makeData(100))
+  const tableContainerRef = useRef<HTMLDivElement>(null)
+  const { data, fetchNextPage, isFetching, isLoading } = useInfiniteQuery<UserApiResponse>({
+    queryKey: ['users'],
+    queryFn: async ({ pageParam = 0 }) => {
+      const start = (pageParam as number) * fetchSize
+      const fetchedData = await fetchData(start, fetchSize)
+      return fetchedData
+    },
+    initialPageParam: 0,
+    getNextPageParam: (_lastGroup, groups) => groups.length,
+    refetchOnWindowFocus: false,
+    placeholderData: keepPreviousData
+  })
+
+  const rowData = useMemo(() => data?.pages?.flatMap((page) => page.data) ?? [], [data])
+  const totalDBRowCount = data?.pages?.[0]?.meta?.totalRowCount ?? 0
+  const totalFetched = rowData.length
+
+  const fetchMoreOnBottomReached = useCallback(
+    (containerRefElement?: HTMLDivElement | null) => {
+      if (containerRefElement) {
+        const { scrollHeight, scrollTop, clientHeight } = containerRefElement
+        //once the user has scrolled within 500px of the bottom of the table, fetch more data if we can
+        if (
+          scrollHeight - scrollTop - clientHeight < 500 &&
+          !isFetching &&
+          totalFetched < totalDBRowCount
+        ) {
+          fetchNextPage()
+        }
+      }
+    },
+    [fetchNextPage, isFetching, totalFetched, totalDBRowCount]
+  )
+
+  fetchMoreOnBottomReached(tableContainerRef.current)
+  useEffect(() => {}, [fetchMoreOnBottomReached])
 
   const table = useReactTable({
     data: rowData,
@@ -20,10 +59,19 @@ export default function DataTable() {
     getCoreRowModel: getCoreRowModel()
   })
 
+  const { rows } = table.getRowModel()
+
   return (
     <div className="m-1 -mt-6 bg-background flex flex-col items-center text-sm rounded-md gap-4">
       <span className="text-3xl font-bold">TODO: Add Infinite Scrolling</span>
-      <div className="overflow-auto relative h-[600px] w-full border-2 rounded-md shadow-2xl ">
+      <span className="font-bold p-2">
+        {rowData.length} of {totalDBRowCount} rows fetched
+      </span>
+      <div
+        onScroll={(e) => fetchMoreOnBottomReached(e.currentTarget)}
+        ref={tableContainerRef}
+        className="overflow-auto relative h-[600px] w-full border-2 rounded-md shadow-2xl "
+      >
         <Table>
           <TableHeader className="sticky top-0 z-10 bg-emerald-400">
             {table.getHeaderGroups().map((headerGroup) => (
@@ -78,4 +126,7 @@ export default function DataTable() {
       </div>
     </div>
   )
+}
+function useref<T>(arg0: null) {
+  throw new Error('Function not implemented.')
 }
